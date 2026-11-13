@@ -1009,8 +1009,8 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     /// Bayleaf screen-split: a window moved to another screen should not fly in from where it was
-    /// on the old one. On the shown screen it slides in from its own edge (left half from the
-    /// left, right half from the right); on another screen it simply appears with that screen.
+    /// on the old one. Put on a half of the shown screen, it fades in (window-open animation) in
+    /// the space its neighbour frees by shrinking; on another screen it appears with that screen.
     fn settle_moved_tile(
         &mut self,
         workspace_id: WorkspaceId,
@@ -1026,11 +1026,8 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
         tile.stop_move_animations();
-        if is_active {
-            if let Some(col) = column_idx {
-                let width = tile.tile_size().w;
-                tile.animate_move_x_from(if col == 0 { -width } else { width });
-            }
+        if is_active && column_idx.is_some() {
+            tile.start_open_animation();
         }
     }
 
