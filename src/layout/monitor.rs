@@ -471,6 +471,17 @@ impl<W: LayoutElement> Monitor<W> {
                     return;
                 }
 
+                // Bayleaf screen-split: workspaces are screens, and switching between them is a
+                // crossfade rather than a vertical slide: switch at once and let the new screen's
+                // windows come in with the window-open animation (scale and fade).
+                if self.options.layout.screen_split && !self.overview_open {
+                    self.workspace_switch = None;
+                    for tile in self.workspaces[idx].tiles_mut() {
+                        tile.start_open_animation();
+                    }
+                    return;
+                }
+
                 self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
                     self.clock.clone(),
                     current_idx,
@@ -909,6 +920,28 @@ impl<W: LayoutElement> Monitor<W> {
             window.is_none_or(|win| self.active_window().map(|win| win.id()) == Some(win))
         });
 
+        // Bayleaf screen-split: putting a window on a half of a full pair replaces the window on
+        // that half, which moves to the empty workspace at the bottom. Done here in one step so
+        // the other half never shows alone at full width in between.
+        let replaced = if self.options.layout.screen_split {
+            column_idx.and_then(|col| {
+                let ids: Vec<W::Id> = self.workspaces[new_idx]
+                    .scrolling()
+                    .columns()
+                    .filter_map(|c| c.tiles().next().map(|(t, _)| t.window().id().clone()))
+                    .collect();
+                (ids.len() >= 2).then(|| {
+                    if col == 0 {
+                        ids[0].clone()
+                    } else {
+                        ids[ids.len() - 1].clone()
+                    }
+                })
+            })
+        } else {
+            None
+        };
+
         let workspace = &mut self.workspaces[source_workspace_idx];
         let transaction = Transaction::new();
         let removed = if let Some(window) = window {
@@ -919,6 +952,36 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
+        let moved_id = removed.tile.window().id().clone();
+
+        if let Some(victim) = &replaced {
+            let out = self.workspaces[new_idx].remove_tile(victim, Transaction::new());
+            let bottom_id = self.workspaces[self.workspaces.len() - 1].id();
+            self.add_tile(
+                out.tile,
+                MonitorAddWindowTarget::Workspace {
+                    id: bottom_id,
+                    column_idx: None,
+                },
+                ActivateWindow::No,
+                true,
+                ColumnWidth::Proportion(1.),
+                false,
+                false,
+            );
+        }
+
+        // Join the pair at its final width right away instead of growing and shrinking back.
+        let (width, is_full_width) = if self.options.layout.screen_split && !removed.is_floating {
+            let columns = self.workspaces[new_idx].scrolling().columns().count() + 1;
+            if columns <= 2 {
+                (ColumnWidth::Proportion(1. / columns as f64), false)
+            } else {
+                (removed.width, removed.is_full_width)
+            }
+        } else {
+            (removed.width, removed.is_full_width)
+        };
         self.add_tile(
             removed.tile,
             MonitorAddWindowTarget::Workspace {
@@ -931,13 +994,43 @@ impl<W: LayoutElement> Monitor<W> {
                 ActivateWindow::No
             },
             true,
-            removed.width,
-            removed.is_full_width,
+            width,
+            is_full_width,
             removed.is_floating,
         );
 
+        if self.options.layout.screen_split {
+            self.settle_moved_tile(new_id, Some(&moved_id), column_idx);
+        }
+
         if self.workspace_switch.is_none() {
             self.clean_up_workspaces();
+        }
+    }
+
+    /// Bayleaf screen-split: a window moved to another screen should not fly in from where it was
+    /// on the old one. On the shown screen it slides in from its own edge (left half from the
+    /// left, right half from the right); on another screen it simply appears with that screen.
+    fn settle_moved_tile(
+        &mut self,
+        workspace_id: WorkspaceId,
+        window: Option<&W::Id>,
+        column_idx: Option<usize>,
+    ) {
+        let Some(window) = window else { return };
+        let is_active = self.workspaces[self.active_workspace_idx].id() == workspace_id;
+        let Some(ws) = self.workspaces.iter_mut().find(|ws| ws.id() == workspace_id) else {
+            return;
+        };
+        let Some(tile) = ws.tiles_mut().find(|t| t.window().id() == window) else {
+            return;
+        };
+        tile.stop_move_animations();
+        if is_active {
+            if let Some(col) = column_idx {
+                let width = tile.tile_size().w;
+                tile.animate_move_x_from(if col == 0 { -width } else { width });
+            }
         }
     }
 
