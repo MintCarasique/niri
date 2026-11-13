@@ -482,6 +482,29 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    /// Where a new window without a placement preference opens. With `screen-split` (Bayleaf), a
+    /// tiled window that would land next to other windows opens on the empty workspace at the
+    /// bottom instead: every app gets a screen of its own, without first opening next to the
+    /// focused one and then moving away.
+    pub(super) fn auto_add_window_target<'a>(
+        &self,
+        is_floating: bool,
+    ) -> MonitorAddWindowTarget<'a, W> {
+        if !self.options.layout.screen_split || is_floating {
+            return MonitorAddWindowTarget::Auto;
+        }
+        let active = &self.workspaces[self.active_workspace_idx];
+        match self.workspaces.last() {
+            Some(last) if active.has_windows() && last.id() != active.id() => {
+                MonitorAddWindowTarget::Workspace {
+                    id: last.id(),
+                    column_idx: None,
+                }
+            }
+            _ => MonitorAddWindowTarget::Auto,
+        }
+    }
+
     pub(super) fn resolve_add_window_target<'a>(
         &mut self,
         target: MonitorAddWindowTarget<'a, W>,
@@ -856,6 +879,17 @@ impl<W: LayoutElement> Monitor<W> {
         idx: usize,
         activate: ActivateWindow,
     ) {
+        self.move_to_workspace_at(window, idx, None, activate);
+    }
+
+    /// Like [`Self::move_to_workspace`], optionally as a new column at `column_idx` (0-based).
+    pub fn move_to_workspace_at(
+        &mut self,
+        window: Option<&W::Id>,
+        idx: usize,
+        column_idx: Option<usize>,
+        activate: ActivateWindow,
+    ) {
         let source_workspace_idx = if let Some(window) = window {
             self.workspaces
                 .iter()
@@ -889,7 +923,7 @@ impl<W: LayoutElement> Monitor<W> {
             removed.tile,
             MonitorAddWindowTarget::Workspace {
                 id: new_id,
-                column_idx: None,
+                column_idx,
             },
             if activate {
                 ActivateWindow::Yes

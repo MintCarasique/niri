@@ -945,14 +945,17 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 let (mon_idx, target) = match target {
-                    AddWindowTarget::Auto => (*active_monitor_idx, MonitorAddWindowTarget::Auto),
+                    AddWindowTarget::Auto => (
+                        *active_monitor_idx,
+                        monitors[*active_monitor_idx].auto_add_window_target(is_floating),
+                    ),
                     AddWindowTarget::Output(output) => {
                         let mon_idx = monitors
                             .iter()
                             .position(|mon| mon.output == *output)
                             .unwrap();
 
-                        (mon_idx, MonitorAddWindowTarget::Auto)
+                        (mon_idx, monitors[mon_idx].auto_add_window_target(is_floating))
                     }
                     AddWindowTarget::Workspace(ws_id) => {
                         let mon_idx = monitors
@@ -2123,6 +2126,17 @@ impl<W: LayoutElement> Layout<W> {
         idx: usize,
         activate: ActivateWindow,
     ) {
+        self.move_to_workspace_at(window, idx, None, activate);
+    }
+
+    /// Like [`Self::move_to_workspace`], optionally as a new column at `column_idx` (0-based).
+    pub fn move_to_workspace_at(
+        &mut self,
+        window: Option<&W::Id>,
+        idx: usize,
+        column_idx: Option<usize>,
+        activate: ActivateWindow,
+    ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -2145,7 +2159,7 @@ impl<W: LayoutElement> Layout<W> {
             };
             monitor
         };
-        monitor.move_to_workspace(window, idx, activate);
+        monitor.move_to_workspace_at(window, idx, column_idx, activate);
     }
 
     pub fn move_column_to_workspace_up(&mut self, activate: bool) {

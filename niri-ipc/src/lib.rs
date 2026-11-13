@@ -524,6 +524,28 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
+    /// Move a window to a workspace, as a new column at a given index, and focus it.
+    ///
+    /// Used by Bayleaf to put an app on the left or right half of a `screen-split` workspace in
+    /// one step.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move a window to a workspace as a new column at an index, and focus it")
+    )]
+    MoveWindowToWorkspaceColumn {
+        /// Id of the window to move.
+        #[cfg_attr(feature = "clap", arg(long))]
+        window_id: u64,
+
+        /// Reference (index or name) of the workspace to move the window to.
+        #[cfg_attr(feature = "clap", arg())]
+        reference: WorkspaceReferenceArg,
+
+        /// Index of the new column, starting from 1. Larger than the number of columns means
+        /// last.
+        #[cfg_attr(feature = "clap", arg(long))]
+        column: usize,
+    },
     /// Move the focused column to the workspace below.
     MoveColumnToWorkspaceDown {
         /// Whether the focus should follow the target workspace.

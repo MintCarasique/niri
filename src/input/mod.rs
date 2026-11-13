@@ -1319,6 +1319,36 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::MoveWindowToWorkspaceColumn {
+                window_id: id,
+                reference,
+                column,
+            } => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    // Bayleaf runs one output; a workspace on another output is not supported
+                    // here (the index would be relative to the wrong monitor).
+                    let same_output = |output: &Option<Output>| {
+                        output.is_none() || output.as_ref() == self.niri.layout.active_output()
+                    };
+                    if let Some((_, index)) = self
+                        .niri
+                        .find_output_and_workspace_index(reference)
+                        .filter(|(output, _)| same_output(output))
+                    {
+                        self.niri.layout.move_to_workspace_at(
+                            Some(&window),
+                            index,
+                            Some(column.saturating_sub(1)),
+                            ActivateWindow::Yes,
+                        );
+                        self.maybe_warp_cursor_to_focus();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                }
+            }
             Action::MoveWindowToWorkspaceById {
                 window_id: id,
                 reference,

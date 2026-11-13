@@ -233,6 +233,12 @@ pub enum Action {
         reference: WorkspaceReference,
         focus: bool,
     },
+    #[knuffel(skip)]
+    MoveWindowToWorkspaceColumn {
+        window_id: u64,
+        reference: WorkspaceReference,
+        column: usize,
+    },
     MoveColumnToWorkspaceDown(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveColumnToWorkspaceUp(#[knuffel(property(name = "focus"), default = true)] bool),
     MoveColumnToWorkspace(
@@ -529,6 +535,15 @@ impl From<niri_ipc::Action> for Action {
                 window_id,
                 reference: WorkspaceReference::from(reference),
                 focus,
+            },
+            niri_ipc::Action::MoveWindowToWorkspaceColumn {
+                window_id,
+                reference,
+                column,
+            } => Self::MoveWindowToWorkspaceColumn {
+                window_id,
+                reference: WorkspaceReference::from(reference),
+                column,
             },
             niri_ipc::Action::MoveColumnToWorkspaceDown { focus } => {
                 Self::MoveColumnToWorkspaceDown(focus)

@@ -2292,11 +2292,34 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn view_pos(&self) -> f64 {
+        if let Some(pos) = self.screen_split_view_pos() {
+            return pos;
+        }
         self.column_x(self.active_column_idx) + self.view_offset.current()
     }
 
     pub fn target_view_pos(&self) -> f64 {
+        if let Some(pos) = self.screen_split_view_pos() {
+            return pos;
+        }
         self.column_x(self.active_column_idx) + self.view_offset.target()
+    }
+
+    /// Whether `screen-split` applies to this workspace right now: at most two columns, none of
+    /// them fullscreen or maximized.
+    fn is_screen_split(&self) -> bool {
+        let n = self.columns.len();
+        self.options.layout.screen_split
+            && (1..=2).contains(&n)
+            && self.columns.iter().all(|c| c.sizing_mode().is_normal())
+    }
+
+    /// With `screen-split` the view is always at the start of the workspace. Returned directly
+    /// rather than through the view offset, which is relative to the active column and would
+    /// drift while column widths animate.
+    fn screen_split_view_pos(&self) -> Option<f64> {
+        (self.is_screen_split() && !self.view_offset.is_gesture())
+            .then_some(-self.working_area.loc.x)
     }
 
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
@@ -3722,12 +3745,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     /// scrolling to the focused column. Workspaces with more columns, or with a fullscreen or
     /// maximized column, keep niri's normal behavior.
     fn enforce_screen_split(&mut self) {
-        let n = self.columns.len();
-        if n == 0 || n > 2 || self.columns.iter().any(|c| !c.sizing_mode().is_normal()) {
+        if !self.is_screen_split() {
             return;
         }
 
-        let proportion = 1. / n as f64;
+        let proportion = 1. / self.columns.len() as f64;
         for col in &mut self.columns {
             if col.is_full_width || col.width != ColumnWidth::Proportion(proportion) {
                 col.is_full_width = false;
@@ -3736,8 +3758,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
+        // Keep the stored offset in line with the pinned view (see screen_split_view_pos), so
+        // nothing jumps when the workspace leaves screen-split (a third column, fullscreen).
         if !self.view_offset.is_gesture() {
-            // view_pos = column_x(active) + view_offset; keep view_pos at the working area start.
             let pinned = -self.column_x(self.active_column_idx) - self.working_area.loc.x;
             self.view_offset = ViewOffset::Static(pinned);
         }
