@@ -3630,6 +3630,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
+        if self.options.layout.screen_split {
+            self.enforce_screen_split();
+        }
+
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
             let mut col_resize_data = None;
             if let Some(resize) = &self.interactive_resize {
@@ -3710,6 +3714,32 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 win.refresh();
             }
+        }
+    }
+
+    /// Bayleaf `screen-split`: a workspace is one screen. One column fills the working area, two
+    /// columns get half of it each, and the view stays at the start of the workspace instead of
+    /// scrolling to the focused column. Workspaces with more columns, or with a fullscreen or
+    /// maximized column, keep niri's normal behavior.
+    fn enforce_screen_split(&mut self) {
+        let n = self.columns.len();
+        if n == 0 || n > 2 || self.columns.iter().any(|c| !c.sizing_mode().is_normal()) {
+            return;
+        }
+
+        let proportion = 1. / n as f64;
+        for col in &mut self.columns {
+            if col.is_full_width || col.width != ColumnWidth::Proportion(proportion) {
+                col.is_full_width = false;
+                col.set_column_width(SizeChange::SetProportion(proportion * 100.), None, true);
+                cancel_resize_for_column(&mut self.interactive_resize, col);
+            }
+        }
+
+        if !self.view_offset.is_gesture() {
+            // view_pos = column_x(active) + view_offset; keep view_pos at the working area start.
+            let pinned = -self.column_x(self.active_column_idx) - self.working_area.loc.x;
+            self.view_offset = ViewOffset::Static(pinned);
         }
     }
 
